@@ -1,0 +1,32 @@
+# Node modules / Next
+node_modules/
+.next/
+out/
+dist/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+*.egg
+
+# Data / secrets
+backend/data/
+.env
+.env.local
+*.db
+*.sqlite3
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+*.log
+
+# Docker
+.dockerignore
+
+# Build caches
+*.tsbuildinfo
