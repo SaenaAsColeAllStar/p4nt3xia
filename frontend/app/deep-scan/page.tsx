@@ -299,7 +299,7 @@ export default function DeepScanPage() {
 
       <section className="animate-fadeUp space-y-3" style={{ animationDelay: "100ms" }}>
         <h2 className="font-display text-2xl text-ink-900">Results</h2>
-        <FindingsTable findings={findings} />
+        <FindingsTable findings={findings} scanId={scanId || undefined} />
       </section>
     </div>
   );

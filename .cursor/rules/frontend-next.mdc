@@ -1,0 +1,14 @@
+---
+description: Next.js frontend patterns for P4NT3XIA
+globs: frontend/**/*.{ts,tsx}
+alwaysApply: false
+---
+
+# Frontend conventions
+
+- Client pages that stream scans use `"use client"`, `api` from `lib/api.ts`, and WebSocket `${WS_URL}/ws/scans/{id}`.
+- Reuse `FindingsTable`, `ProgressPanel`, `SeverityBadge` / `StatusBadge` instead of reinventing.
+- Attack Mode form: vector checkboxes, optional auth header, delay/threads, authorization confirm checkbox before launch.
+- Finding PoC: copy-to-clipboard for `poc_curl` / request / response; link to `/history/[scanId]/findings/[findingId]` for detail.
+- Keep the existing visual language (display + mono fonts, signal accent, fog backgrounds). Avoid dark-mode purple AI defaults.
+- Report downloads: open/fetch `/api/scans/{id}/report?format=json|html` via the API URL.

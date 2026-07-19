@@ -122,7 +122,14 @@ class ToolRunner:
         exit_code = proc.returncode if proc.returncode is not None else -1
         status = "completed" if exit_code == 0 else "failed"
         # Many scanners exit non-zero when findings exist; treat as completed if we got stdout
-        if exit_code != 0 and stdout_chunks and self.tool_name in ("nuclei", "ffuf", "nmap"):
+        if exit_code != 0 and stdout_chunks and self.tool_name in (
+            "nuclei",
+            "nuclei_exploit",
+            "ffuf",
+            "nmap",
+            "sqlmap",
+            "dalfox",
+        ):
             status = "completed"
 
         return ToolRunResult(

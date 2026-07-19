@@ -1,0 +1,14 @@
+---
+description: FastAPI backend patterns for scans and tools
+globs: backend/**/*.py
+alwaysApply: false
+---
+
+# Backend conventions
+
+- Routers under `app/routers/`, schemas under `app/schemas/`, services under `app/services/`.
+- New tools: add wrapper in `deep_scan.py` or `attack.py`, register in pipeline list in `scanner.py`, optional config path in `config.py`.
+- Orchestrator owns DB sessions via `SessionLocal`, emits WS events after each tool/finding, handles cancel via `asyncio.Task.cancel()`.
+- Attack tools: sqlmap / dalfox / nuclei exploit — aggressive flags OK; clamp timeouts; parse stdout into structured `parsed_output`.
+- Reports live in `services/report.py` (`scan_to_json`, `scan_to_html`). Prefer query `?format=` over new paths when possible.
+- CVSS: map severity to a float when the tool does not provide one (info 0.0, low 3.1, medium 5.5, high 7.5, critical 9.8).

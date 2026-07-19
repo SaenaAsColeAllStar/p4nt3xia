@@ -14,7 +14,8 @@ from app.models.finding import Finding
 from app.models.scan import Scan
 from app.models.target import Target
 from app.models.tool_result import ToolResult
-from app.schemas.scan import DeepScanRequest
+from app.schemas.scan import AttackScanRequest, DeepScanRequest
+from app.services import attack as attack_tools
 from app.services import deep_scan as tools
 from app.services.target_utils import is_valid_target
 from app.services.tool_runner import ToolRunResult
@@ -22,6 +23,14 @@ from app.services.ws_manager import ws_manager
 
 
 logger = logging.getLogger(__name__)
+
+SEVERITY_CVSS = {
+    "info": 0.0,
+    "low": 3.1,
+    "medium": 5.5,
+    "high": 7.5,
+    "critical": 9.8,
+}
 
 # Pipeline order per Phase 1 MVP
 DEEP_SCAN_PIPELINE = [
@@ -31,6 +40,13 @@ DEEP_SCAN_PIPELINE = [
     ("whatweb", "tech_detect", tools.run_whatweb),
     ("nuclei", "safe_vuln_scan", tools.run_nuclei),
     ("katana", "crawl", tools.run_katana),
+]
+
+# Phase 2 Attack Mode pipeline
+ATTACK_PIPELINE = [
+    ("sqlmap", "sql_injection", "sqli"),
+    ("dalfox", "xss", "xss"),
+    ("nuclei_exploit", "nuclei_exploit", "exploit"),
 ]
 
 
@@ -74,10 +90,59 @@ class ScannerService:
         db.refresh(scan)
         return scan
 
-    def start_scan(self, scan_id: str) -> None:
+    def create_attack_scan(self, db: Session, payload: AttackScanRequest) -> Scan:
+        if not is_valid_target(payload.target):
+            raise ValueError("Invalid target format. Provide a URL, domain, or IP.")
+        if not payload.options.authorized:
+            raise ValueError(
+                "Authorization confirmation required. Set options.authorized=true "
+                "only for systems you are permitted to attack."
+            )
+
+        target = (
+            db.query(Target)
+            .filter(Target.value == payload.target.strip())
+            .first()
+        )
+        if not target:
+            target = Target(
+                value=payload.target.strip(),
+                type=payload.target_type,
+            )
+            db.add(target)
+            db.flush()
+
+        opts = payload.options.model_dump()
+        scan = Scan(
+            target_id=target.id,
+            mode="attack",
+            status="pending",
+            progress=0.0,
+            configuration={
+                "target": payload.target.strip(),
+                "auth_header": payload.auth_header,
+                "options": opts,
+            },
+        )
+        db.add(scan)
+        db.commit()
+        db.refresh(scan)
+        return scan
+
+    def start_scan(self, scan_id: str, *, mode: str | None = None) -> None:
         if scan_id in self._tasks and not self._tasks[scan_id].done():
             return
-        task = asyncio.create_task(self._run_deep_scan(scan_id))
+        if mode is None:
+            db = SessionLocal()
+            try:
+                scan = db.query(Scan).filter(Scan.id == scan_id).first()
+                mode = scan.mode if scan else "deep_scan"
+            finally:
+                db.close()
+        if mode == "attack":
+            task = asyncio.create_task(self._run_attack(scan_id))
+        else:
+            task = asyncio.create_task(self._run_deep_scan(scan_id))
         self._tasks[scan_id] = task
 
     async def cancel_scan(self, scan_id: str) -> bool:
@@ -298,6 +363,198 @@ class ScannerService:
             db.close()
             self._tasks.pop(scan_id, None)
 
+    async def _run_attack(self, scan_id: str) -> None:
+        db = SessionLocal()
+        try:
+            scan = db.query(Scan).filter(Scan.id == scan_id).first()
+            if not scan:
+                return
+
+            options = (scan.configuration or {}).get("options") or {}
+            auth_header = (scan.configuration or {}).get("auth_header")
+            target_value = (scan.configuration or {}).get("target") or ""
+            if not target_value and scan.target:
+                target_value = scan.target.value
+
+            scan.status = "running"
+            scan.started_at = _utcnow()
+            scan.progress = 0.0
+            db.commit()
+
+            await asyncio.sleep(0.3)
+            await self._emit(
+                scan_id,
+                status="running",
+                progress=0,
+                message=f"Launching Attack Mode on {target_value} (authorized)",
+            )
+
+            enabled: list[tuple[str, str]] = [
+                (name, key)
+                for name, key, _ in ATTACK_PIPELINE
+                if options.get(key, True)
+            ]
+            if not enabled:
+                scan.status = "failed"
+                scan.error_message = "No attack vectors enabled"
+                scan.completed_at = _utcnow()
+                db.commit()
+                await self._emit(
+                    scan_id,
+                    status="failed",
+                    progress=0,
+                    message="No attack vectors enabled",
+                )
+                return
+
+            timeout = int(options.get("timeout", 60)) * 5
+            timeout = max(120, min(timeout, 900))
+            delay_ms = int(options.get("delay_ms", 0))
+            level = int(options.get("sqlmap_level", 2))
+            risk = int(options.get("sqlmap_risk", 2))
+            step_count = len(enabled)
+
+            runners = {
+                "sqlmap": lambda: attack_tools.run_sqlmap(
+                    target_value,
+                    timeout,
+                    auth_header=auth_header,
+                    delay_ms=delay_ms,
+                    level=level,
+                    risk=risk,
+                ),
+                "dalfox": lambda: attack_tools.run_dalfox(
+                    target_value,
+                    timeout,
+                    auth_header=auth_header,
+                    delay_ms=delay_ms,
+                ),
+                "nuclei_exploit": lambda: attack_tools.run_nuclei_exploit(
+                    target_value,
+                    timeout,
+                    auth_header=auth_header,
+                ),
+            }
+
+            for index, (tool_name, _opt_key) in enumerate(enabled):
+                progress_start = (index / step_count) * 100
+                progress_end = ((index + 1) / step_count) * 100
+
+                scan.current_tool = tool_name
+                scan.progress = progress_start
+                db.commit()
+
+                await self._emit(
+                    scan_id,
+                    status="running",
+                    progress=progress_start,
+                    current_tool=tool_name,
+                    message=f"Running {tool_name}...",
+                )
+
+                try:
+                    result: ToolRunResult = await runners[tool_name]()
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    logger.exception("Attack tool %s crashed", tool_name)
+                    result = ToolRunResult(
+                        tool_name=tool_name,
+                        command=[tool_name],
+                        stderr=str(exc),
+                        status="failed",
+                    )
+
+                tr = ToolResult(
+                    scan_id=scan_id,
+                    tool_name=result.tool_name,
+                    command=result.command_str,
+                    stdout=result.stdout[:500_000] if result.stdout else None,
+                    stderr=result.stderr[:100_000] if result.stderr else None,
+                    exit_code=result.exit_code,
+                    duration_ms=result.duration_ms,
+                    status=result.status,
+                    parsed_output=result.parsed_output or {},
+                )
+                db.add(tr)
+                db.flush()
+
+                findings = self._findings_from_attack_tool(scan_id, result)
+                for f in findings:
+                    db.add(f)
+                db.commit()
+
+                for f in findings:
+                    db.refresh(f)
+                    await self._emit(
+                        scan_id,
+                        status="running",
+                        progress=progress_end,
+                        current_tool=tool_name,
+                        message=f"Finding: {f.title}",
+                        finding={
+                            "id": f.id,
+                            "title": f.title,
+                            "severity": f.severity,
+                            "finding_type": f.finding_type,
+                            "description": f.description,
+                            "poc_curl": f.poc_curl,
+                            "cvss_score": f.cvss_score,
+                        },
+                    )
+
+                status_msg = result.status
+                if result.status == "skipped":
+                    status_msg = f"skipped ({result.skip_reason or 'not available'})"
+                await self._emit(
+                    scan_id,
+                    status="running",
+                    progress=progress_end,
+                    current_tool=tool_name,
+                    message=f"Finished {tool_name}: {status_msg}",
+                    tool_result={
+                        "tool_name": tool_name,
+                        "status": result.status,
+                        "duration_ms": result.duration_ms,
+                        "parsed_summary": self._summarize_parsed(result),
+                    },
+                )
+
+                scan.progress = progress_end
+                db.commit()
+
+            scan.status = "completed"
+            scan.progress = 100.0
+            scan.current_tool = None
+            scan.completed_at = _utcnow()
+            db.commit()
+            await self._emit(
+                scan_id,
+                status="completed",
+                progress=100,
+                message="Attack Mode completed",
+            )
+        except asyncio.CancelledError:
+            logger.info("Attack scan %s cancelled", scan_id)
+            raise
+        except Exception as exc:
+            logger.exception("Attack scan %s failed", scan_id)
+            scan = db.query(Scan).filter(Scan.id == scan_id).first()
+            if scan:
+                scan.status = "failed"
+                scan.error_message = str(exc)[:1000]
+                scan.completed_at = _utcnow()
+                db.commit()
+            await self._emit(
+                scan_id,
+                status="failed",
+                progress=0,
+                message=f"Attack failed: {exc}",
+            )
+        finally:
+            db.close()
+            self._tasks.pop(scan_id, None)
+
     def _summarize_parsed(self, result: ToolRunResult) -> dict[str, Any]:
         p = result.parsed_output or {}
         if result.tool_name == "subfinder":
@@ -308,11 +565,62 @@ class ScannerService:
             return {"endpoint_count": len(p.get("endpoints") or [])}
         if result.tool_name == "whatweb":
             return {"tech_count": len(p.get("technologies") or [])}
-        if result.tool_name == "nuclei":
+        if result.tool_name in ("nuclei", "nuclei_exploit", "sqlmap", "dalfox"):
             return {"finding_count": len(p.get("findings") or [])}
         if result.tool_name == "katana":
             return {"url_count": len(p.get("urls") or [])}
         return {}
+
+    def _findings_from_attack_tool(
+        self, scan_id: str, result: ToolRunResult
+    ) -> list[Finding]:
+        findings: list[Finding] = []
+        p = result.parsed_output or {}
+
+        if result.status == "skipped":
+            findings.append(
+                Finding(
+                    scan_id=scan_id,
+                    title=f"{result.tool_name} skipped",
+                    severity="info",
+                    finding_type="tool_status",
+                    description=result.skip_reason or result.stderr or "Tool not available",
+                    raw_data={"tool": result.tool_name, "status": "skipped"},
+                )
+            )
+            return findings
+
+        for item in p.get("findings") or []:
+            sev = (item.get("severity") or "info").lower()
+            if sev not in SEVERITY_CVSS:
+                sev = "info"
+            refs = item.get("references") or item.get("reference") or []
+            if isinstance(refs, str):
+                refs = [refs]
+            cve = item.get("cve_id")
+            if isinstance(cve, list):
+                cve = cve[0] if cve else None
+            cvss = item.get("cvss_score")
+            if cvss is None:
+                cvss = SEVERITY_CVSS.get(sev)
+            findings.append(
+                Finding(
+                    scan_id=scan_id,
+                    title=item.get("title") or f"{result.tool_name} finding",
+                    severity=sev,
+                    finding_type=item.get("finding_type") or result.tool_name,
+                    description=item.get("description"),
+                    poc_request=item.get("poc_request"),
+                    poc_response=item.get("poc_response"),
+                    poc_curl=item.get("poc_curl"),
+                    remediation=item.get("remediation"),
+                    references=list(refs)[:20],
+                    cve_id=cve,
+                    cvss_score=float(cvss) if cvss is not None else None,
+                    raw_data=item.get("raw") or item,
+                )
+            )
+        return findings
 
     def _findings_from_tool(self, scan_id: str, result: ToolRunResult) -> list[Finding]:
         findings: list[Finding] = []

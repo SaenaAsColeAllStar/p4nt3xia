@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     whatweb_path: str = "whatweb"
     nuclei_path: str = "nuclei"
     katana_path: str = "katana"
+    sqlmap_path: str = "sqlmap"
+    dalfox_path: str = "dalfox"
     # Default wordlist for ffuf (small/medium for Deep Scan)
     ffuf_wordlist: str = str(
         Path(__file__).resolve().parent.parent / "tools" / "wordlists" / "common.txt"

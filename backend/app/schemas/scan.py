@@ -31,6 +31,45 @@ class DeepScanRequest(BaseModel):
         return v.strip()
 
 
+class AttackModeOptions(BaseModel):
+    sql_injection: bool = True
+    xss: bool = True
+    nuclei_exploit: bool = True
+    threads: int = Field(default=3, ge=1, le=50)
+    timeout: int = Field(default=60, ge=10, le=900)
+    delay_ms: int = Field(default=0, ge=0, le=10_000)
+    sqlmap_level: int = Field(default=2, ge=1, le=5)
+    sqlmap_risk: int = Field(default=2, ge=1, le=3)
+    authorized: bool = Field(
+        default=False,
+        description="Must be true — explicit authorization confirmation",
+    )
+
+
+class AttackScanRequest(BaseModel):
+    target: str = Field(..., min_length=1, max_length=512)
+    target_type: str = Field(default="web", pattern="^(web|api|android_backend)$")
+    auth_header: str | None = Field(
+        default=None,
+        max_length=2048,
+        description="Optional Authorization header value (e.g. Bearer …)",
+    )
+    options: AttackModeOptions = Field(default_factory=AttackModeOptions)
+
+    @field_validator("target")
+    @classmethod
+    def normalize_target(cls, v: str) -> str:
+        return v.strip()
+
+    @field_validator("auth_header")
+    @classmethod
+    def normalize_auth(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        stripped = v.strip()
+        return stripped or None
+
+
 class ToolResultOut(BaseModel):
     id: str
     scan_id: str

@@ -1,0 +1,14 @@
+---
+description: Core P4NT3XIA project conventions for agents
+alwaysApply: true
+---
+
+# P4NT3XIA core
+
+- Product is a personal authorized pentest platform. Prefer PRD at `docs/prd/mvp-1.md` over assumptions.
+- Frontend: `frontend/` (Next.js App Router). Backend: `backend/app/` (FastAPI).
+- Preserve Phase 1 Deep Scan behavior when adding features. Attack Mode is opt-in and must keep an explicit authorization reminder in the UI.
+- Tool execution goes through `ToolRunner`. If a binary is missing, skip gracefully (`status=skipped`) and continue the pipeline.
+- Persist findings with severity, remediation, and PoC fields when available. Broadcast scan progress over WebSocket.
+- Never commit `.env`, credentials, SQLite DBs, `.venv`, or `node_modules`. Follow `.gitignore`.
+- Keep changes scoped; match existing naming (`scanner_service`, `api` client, Tailwind design tokens in `globals.css` / Tailwind config).

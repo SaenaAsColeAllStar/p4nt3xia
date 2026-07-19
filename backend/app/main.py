@@ -24,8 +24,8 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(
     title=settings.app_name,
-    description="Personal pentest web platform — Phase 1 MVP (Deep Scan)",
-    version="0.1.0",
+    description="Personal pentest web platform — Deep Scan + Attack Mode",
+    version="0.2.0",
     lifespan=lifespan,
 )
 

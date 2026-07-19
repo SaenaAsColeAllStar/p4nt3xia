@@ -35,12 +35,19 @@ RUN curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" -o /tmp/go
     && tar -C /usr/local -xzf /tmp/go.tgz \
     && rm /tmp/go.tgz
 
-# ProjectDiscovery + ffuf tools
+# ProjectDiscovery + ffuf + dalfox tools
 RUN go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest \
     && go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest \
     && go install -v github.com/projectdiscovery/katana/cmd/katana@latest \
     && go install -v github.com/ffuf/ffuf/v2@latest \
+    && go install -v github.com/hahwul/dalfox/v2@latest \
     && nuclei -update-templates || true
+
+# sqlmap (Attack Mode)
+RUN pip install --no-cache-dir sqlmap \
+    || (git clone --depth 1 https://github.com/sqlmapproject/sqlmap.git /opt/sqlmap \
+        && ln -sf /opt/sqlmap/sqlmap.py /usr/local/bin/sqlmap \
+        && chmod +x /opt/sqlmap/sqlmap.py)
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt

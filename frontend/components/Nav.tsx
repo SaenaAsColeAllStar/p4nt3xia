@@ -23,7 +23,7 @@ export function Nav() {
             P4NT3XIA
           </span>
           <span className="hidden font-mono text-[10px] uppercase tracking-[0.2em] text-ink-600 sm:inline">
-            Phase 1
+            Phase 2
           </span>
         </Link>
         <nav className="flex flex-wrap items-center gap-1 sm:gap-2">

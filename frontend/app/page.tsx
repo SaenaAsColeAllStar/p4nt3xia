@@ -27,8 +27,9 @@ export default function DashboardPage() {
             P4NT3XIA
           </h1>
           <p className="mt-4 max-w-md text-base text-ink-600 sm:text-lg">
-            Personal deep-scan workbench. Recon, ports, directories, stack
-            fingerprints, safe Nuclei, and crawl — streamed live.
+            Personal deep-scan and attack workbench. Recon streams live; Attack
+            Mode runs sqlmap, Dalfox, and Nuclei exploit templates with PoC
+            exports.
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
             <Link

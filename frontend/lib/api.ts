@@ -84,6 +84,18 @@ export type DeepScanOptions = {
   timeout: number;
 };
 
+export type AttackModeOptions = {
+  sql_injection: boolean;
+  xss: boolean;
+  nuclei_exploit: boolean;
+  threads: number;
+  timeout: number;
+  delay_ms: number;
+  sqlmap_level: number;
+  sqlmap_risk: number;
+  authorized: boolean;
+};
+
 export type ProgressEvent = {
   scan_id: string;
   status: string;
@@ -117,10 +129,16 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json();
 }
 
+export function reportUrl(scanId: string, format: "json" | "html" = "json") {
+  return `${API_URL}/api/scans/${scanId}/report?format=${format}`;
+}
+
 export const api = {
   dashboard: () => request<DashboardStats>("/api/dashboard"),
   listScans: () => request<Scan[]>("/api/scans"),
   getScan: (id: string) => request<ScanWithDetails>(`/api/scans/${id}`),
+  getFinding: (scanId: string, findingId: string) =>
+    request<Finding>(`/api/scans/${scanId}/findings/${findingId}`),
   startDeepScan: (body: {
     target: string;
     target_type?: string;
@@ -130,8 +148,19 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+  startAttackScan: (body: {
+    target: string;
+    target_type?: string;
+    auth_header?: string | null;
+    options?: Partial<AttackModeOptions>;
+  }) =>
+    request<Scan>("/api/scans/attack", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   cancelScan: (id: string) =>
     request<Scan>(`/api/scans/${id}/cancel`, { method: "POST" }),
   listTargets: () => request<Target[]>("/api/targets"),
-  getReport: (id: string) => request<Record<string, unknown>>(`/api/scans/${id}/report`),
+  getReport: (id: string) =>
+    request<Record<string, unknown>>(`/api/scans/${id}/report?format=json`),
 };

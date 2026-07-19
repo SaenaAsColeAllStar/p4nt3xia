@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import { api, ScanWithDetails } from "@/lib/api";
+import { api, reportUrl, ScanWithDetails } from "@/lib/api";
 import { FindingsTable } from "@/components/FindingsTable";
 import { StatusBadge } from "@/components/Badges";
 
@@ -56,6 +56,24 @@ export default function ScanDetailPage() {
             {scan.error_message}
           </p>
         )}
+        <div className="mt-4 flex flex-wrap gap-3">
+          <a
+            href={reportUrl(id, "json")}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="border border-ink-800/20 px-4 py-2 font-mono text-[10px] uppercase tracking-wider text-ink-700 transition hover:border-signal hover:text-signal"
+          >
+            Export JSON
+          </a>
+          <a
+            href={reportUrl(id, "html")}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="bg-ink-900 px-4 py-2 font-mono text-[10px] uppercase tracking-wider text-fog-50 transition hover:bg-signal"
+          >
+            Generate HTML Report
+          </a>
+        </div>
       </div>
 
       <section className="space-y-3">
@@ -93,7 +111,7 @@ export default function ScanDetailPage() {
 
       <section className="space-y-3">
         <h2 className="font-display text-2xl text-ink-900">Findings</h2>
-        <FindingsTable findings={scan.findings} />
+        <FindingsTable findings={scan.findings} scanId={scan.id} />
       </section>
     </div>
   );
