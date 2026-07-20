@@ -16,8 +16,12 @@ venv/
 backend/data/
 .env
 .env.local
+.env.*.local
+docs/local-credentials.md
 *.db
 *.sqlite3
+*.pem
+*.key
 
 # IDE / OS
 .idea/

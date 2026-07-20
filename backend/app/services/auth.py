@@ -85,11 +85,21 @@ def bootstrap_admin(db: Session) -> User | None:
     return user
 
 
+_WEAK_JWT_SECRETS = frozenset(
+    {
+        "change-me-p4nt3xia-dev-secret",
+        "change-me-p4nt3xia-prod-secret",
+        "change-me-to-a-long-random-string",
+    }
+)
+
+
 def ensure_jwt_secret() -> None:
-    """Warn if using the insecure default secret in production-ish setups."""
-    if settings.jwt_secret == "change-me-p4nt3xia-dev-secret":
+    """Warn if using an insecure placeholder JWT secret."""
+    if settings.jwt_secret in _WEAK_JWT_SECRETS or len(settings.jwt_secret) < 24:
         logger.warning(
-            "Using default JWT secret — set P4NT3XIA_JWT_SECRET for any shared deployment"
+            "Weak or placeholder JWT secret — set a strong P4NT3XIA_JWT_SECRET "
+            "(e.g. openssl rand -base64 48) before any shared deployment"
         )
 
 

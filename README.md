@@ -41,12 +41,31 @@ P4NT3XIA_DATABASE_URL=postgresql+psycopg2://p4nt3xia:p4nt3xia@postgres:5432/p4nt
 ## Production Compose
 
 ```bash
-docker compose -f docker-compose.prod.yml up --build -d
+cp .env.example .env
+# Edit .env: set P4NT3XIA_JWT_SECRET and P4NT3XIA_BOOTSTRAP_ADMIN_PASSWORD
+#   openssl rand -base64 48   # JWT
+#   openssl rand -base64 24   # admin password
+
+docker compose -f docker-compose.prod.yml --env-file .env up --build -d
 ```
 
-Uses `Dockerfile.prod` for both services (no bind-mounts, no `--reload`, restart policies, data volume).
+Uses `Dockerfile.prod` for both services (no bind-mounts, no `--reload`, restart policies, healthchecks, data volume). Auth is **on** by default in prod; the first start bootstraps the admin from `P4NT3XIA_BOOTSTRAP_ADMIN_*` if the DB has no users.
 
-## Auth (optional)
+- Frontend: http://localhost:3000 (or `FRONTEND_PORT`)
+- Backend / health: http://localhost:8000/health
+- Login: http://localhost:3000/login
+
+Optional Postgres:
+
+```bash
+# In .env set POSTGRES_PASSWORD and:
+# P4NT3XIA_DATABASE_URL=postgresql+psycopg2://p4nt3xia:PASSWORD@postgres:5432/p4nt3xia
+docker compose -f docker-compose.prod.yml --env-file .env --profile postgres up --build -d
+```
+
+Never commit `.env`. Only `.env.example` (placeholders) belongs in git.
+
+## Auth (optional in dev; required in prod)
 
 ```bash
 P4NT3XIA_AUTH_ENABLED=true
