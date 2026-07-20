@@ -27,9 +27,9 @@ export default function DashboardPage() {
             P4NT3XIA
           </h1>
           <p className="mt-4 max-w-md text-base text-ink-600 sm:text-lg">
-            Personal deep-scan and attack workbench. Recon streams live; Attack
-            Mode runs sqlmap, Dalfox, and Nuclei exploit templates with PoC
-            exports.
+            Personal deep-scan and attack workbench. Phase 4 adds optional
+            multi-user auth, API Mode, payload templates, and Frida — on top of
+            the full Phase 3 Attack toolkit and reports.
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
             <Link
@@ -43,6 +43,18 @@ export default function DashboardPage() {
               className="border border-ink-800/20 px-5 py-2.5 font-mono text-xs uppercase tracking-wider text-ink-700 transition hover:border-ink-800/40"
             >
               Attack Mode
+            </Link>
+            <Link
+              href="/api-mode"
+              className="border border-ink-800/20 px-5 py-2.5 font-mono text-xs uppercase tracking-wider text-ink-700 transition hover:border-ink-800/40"
+            >
+              API Mode
+            </Link>
+            <Link
+              href="/targets"
+              className="border border-ink-800/20 px-5 py-2.5 font-mono text-xs uppercase tracking-wider text-ink-700 transition hover:border-ink-800/40"
+            >
+              Target library
             </Link>
           </div>
         </div>

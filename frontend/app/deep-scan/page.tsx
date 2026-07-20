@@ -1,12 +1,14 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   api,
   DeepScanOptions,
   Finding,
   ProgressEvent,
   ScanWithDetails,
+  Target,
   WS_URL,
 } from "@/lib/api";
 import { FindingsTable } from "@/components/FindingsTable";
@@ -34,8 +36,10 @@ const TOOL_TOGGLES: { key: keyof DeepScanOptions; label: string }[] = [
 
 type LogEntry = { id: string; message: string; tool?: string | null };
 
-export default function DeepScanPage() {
+function DeepScanPageInner() {
+  const searchParams = useSearchParams();
   const [target, setTarget] = useState("");
+  const [library, setLibrary] = useState<Target[]>([]);
   const [options, setOptions] = useState<DeepScanOptions>(DEFAULT_OPTIONS);
   const [scanId, setScanId] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
@@ -47,6 +51,12 @@ export default function DeepScanPage() {
   const [submitting, setSubmitting] = useState(false);
   const logCounter = useRef(0);
   const wsRef = useRef<WebSocket | null>(null);
+
+  useEffect(() => {
+    const q = searchParams.get("target");
+    if (q) setTarget(q);
+    api.listTargets().then(setLibrary).catch(() => undefined);
+  }, [searchParams]);
 
   const pushLog = useCallback((message: string, tool?: string | null) => {
     logCounter.current += 1;
@@ -202,6 +212,32 @@ export default function DeepScanPage() {
           />
         </div>
 
+        {library.length > 0 && (
+          <div>
+            <label
+              htmlFor="from-library"
+              className="mb-1.5 block font-mono text-[10px] uppercase tracking-wider text-ink-600"
+            >
+              From target library
+            </label>
+            <select
+              id="from-library"
+              className="w-full border border-ink-800/15 bg-white px-3 py-2 font-mono text-sm"
+              defaultValue=""
+              onChange={(e) => {
+                if (e.target.value) setTarget(e.target.value);
+              }}
+            >
+              <option value="">Select saved target…</option>
+              {library.map((t) => (
+                <option key={t.id} value={t.value}>
+                  {t.value}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
         <fieldset>
           <legend className="mb-2 font-mono text-[10px] uppercase tracking-wider text-ink-600">
             Modules
@@ -302,5 +338,17 @@ export default function DeepScanPage() {
         <FindingsTable findings={findings} scanId={scanId || undefined} />
       </section>
     </div>
+  );
+}
+
+export default function DeepScanPage() {
+  return (
+    <Suspense
+      fallback={
+        <p className="font-mono text-sm text-ink-600">Loading Deep Scan…</p>
+      }
+    >
+      <DeepScanPageInner />
+    </Suspense>
   );
 }

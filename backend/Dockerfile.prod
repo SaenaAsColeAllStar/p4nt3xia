@@ -1,3 +1,4 @@
+# Production backend — no bind-mounts, no --reload
 FROM python:3.12-slim-bookworm
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -11,7 +12,6 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# System deps + nmap + whatweb (ruby) + hydra + frida build helpers
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     curl \
@@ -28,19 +28,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     unzip \
     && rm -rf /var/lib/apt/lists/*
 
-# WhatWeb (Ruby CLI from upstream)
 RUN git clone --depth 1 https://github.com/urbanadventurer/WhatWeb.git /opt/WhatWeb \
     && ln -sf /opt/WhatWeb/whatweb /usr/local/bin/whatweb \
     && chmod +x /opt/WhatWeb/whatweb \
     && (gem install addressable --no-document || true)
 
-# Install Go (for ProjectDiscovery tools)
 ARG GO_VERSION=1.22.10
 RUN curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" -o /tmp/go.tgz \
     && tar -C /usr/local -xzf /tmp/go.tgz \
     && rm /tmp/go.tgz
 
-# ProjectDiscovery + ffuf + dalfox tools
 RUN go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest \
     && go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest \
     && go install -v github.com/projectdiscovery/katana/cmd/katana@latest \
@@ -48,19 +45,16 @@ RUN go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest 
     && go install -v github.com/hahwul/dalfox/v2@latest \
     && nuclei -update-templates || true
 
-# sqlmap (Attack Mode)
 RUN pip install --no-cache-dir sqlmap \
     || (git clone --depth 1 https://github.com/sqlmapproject/sqlmap.git /opt/sqlmap \
         && ln -sf /opt/sqlmap/sqlmap.py /usr/local/bin/sqlmap \
         && chmod +x /opt/sqlmap/sqlmap.py)
 
-# SSRFmap (Phase 3)
 RUN git clone --depth 1 https://github.com/swisskyrepo/SSRFmap.git /opt/SSRFmap \
     && printf '#!/bin/sh\nexec python3 /opt/SSRFmap/ssrfmap.py "$@"\n' > /usr/local/bin/ssrfmap \
     && chmod +x /usr/local/bin/ssrfmap \
     && (pip install --no-cache-dir -r /opt/SSRFmap/requirements.txt || true)
 
-# JWT_Tool (Phase 3)
 RUN git clone --depth 1 https://github.com/ticarpi/jwt_tool.git /opt/jwt_tool \
     && printf '#!/bin/sh\nexec python3 /opt/jwt_tool/jwt_tool.py "$@"\n' > /usr/local/bin/jwt_tool \
     && chmod +x /usr/local/bin/jwt_tool \
@@ -73,6 +67,8 @@ RUN pip install --no-cache-dir -r requirements.txt \
 COPY app ./app
 COPY tools ./tools
 
+RUN mkdir -p /app/data
+
 EXPOSE 8000
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]

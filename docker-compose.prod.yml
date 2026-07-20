@@ -1,61 +1,61 @@
+# Production-oriented compose: baked images, persistent data volume, restart policies.
+# Usage: docker compose -f docker-compose.prod.yml up --build -d
+# With Postgres: docker compose -f docker-compose.prod.yml --profile postgres up --build -d
+#   and set P4NT3XIA_DATABASE_URL=postgresql+psycopg2://p4nt3xia:CHANGE_ME@postgres:5432/p4nt3xia
+
 services:
   backend:
     build:
       context: ./backend
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.prod
     ports:
       - "8000:8000"
     volumes:
-      - ./backend/app:/app/app
-      - ./backend/tools:/app/tools
       - backend_data:/app/data
     environment:
       - P4NT3XIA_FFUF_WORDLIST=/app/tools/wordlists/common.txt
       - P4NT3XIA_HYDRA_WORDLIST=/app/tools/wordlists/passwords.txt
       - P4NT3XIA_CORS_ORIGINS=["http://localhost:3000","http://127.0.0.1:3000"]
       - P4NT3XIA_AUTH_ENABLED=${P4NT3XIA_AUTH_ENABLED:-false}
-      - P4NT3XIA_JWT_SECRET=${P4NT3XIA_JWT_SECRET:-change-me-p4nt3xia-dev-secret}
+      - P4NT3XIA_JWT_SECRET=${P4NT3XIA_JWT_SECRET:-change-me-p4nt3xia-prod-secret}
       - P4NT3XIA_BOOTSTRAP_ADMIN_USER=${P4NT3XIA_BOOTSTRAP_ADMIN_USER:-}
       - P4NT3XIA_BOOTSTRAP_ADMIN_PASSWORD=${P4NT3XIA_BOOTSTRAP_ADMIN_PASSWORD:-}
       - P4NT3XIA_DATABASE_URL=${P4NT3XIA_DATABASE_URL:-}
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 15s
+      interval: 20s
       timeout: 5s
       retries: 5
-      start_period: 30s
+      start_period: 60s
 
   frontend:
     build:
       context: ./frontend
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.prod
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8000
+        NEXT_PUBLIC_WS_URL: ws://localhost:8000
     ports:
       - "3000:3000"
     environment:
       - NEXT_PUBLIC_API_URL=http://localhost:8000
       - NEXT_PUBLIC_WS_URL=ws://localhost:8000
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-      - /app/.next
     depends_on:
       backend:
         condition: service_healthy
+    restart: unless-stopped
 
-  # Optional Postgres (Phase 4 / prod scale). Usage:
-  #   P4NT3XIA_DATABASE_URL=postgresql+psycopg2://p4nt3xia:p4nt3xia@postgres:5432/p4nt3xia \
-  #   docker compose --profile postgres up --build
   postgres:
     profiles: ["postgres"]
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: p4nt3xia
-      POSTGRES_PASSWORD: p4nt3xia
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-p4nt3xia}
       POSTGRES_DB: p4nt3xia
-    ports:
-      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U p4nt3xia"]
       interval: 10s

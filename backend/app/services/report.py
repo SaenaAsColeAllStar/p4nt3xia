@@ -1,8 +1,9 @@
-"""Report generation — JSON and HTML (PDF deferred to Phase 3)."""
+"""Report generation — JSON, HTML, Markdown, and PDF."""
 
 from __future__ import annotations
 
 import html
+import io
 from typing import Any
 
 from sqlalchemy.orm import Session, joinedload
@@ -73,6 +74,185 @@ def scan_to_json(db: Session, scan_id: str) -> dict[str, Any] | None:
             for f in findings
         ],
     }
+
+
+def scan_to_markdown(db: Session, scan_id: str) -> str | None:
+    data = scan_to_json(db, scan_id)
+    if not data:
+        return None
+    lines = [
+        f"# P4NT3XIA Report — {data.get('target') or scan_id}",
+        "",
+        f"- **Mode:** {data.get('mode')}",
+        f"- **Status:** {data.get('status')}",
+        f"- **Started:** {data.get('started_at') or '—'}",
+        f"- **Duration (s):** {data.get('duration_seconds') if data.get('duration_seconds') is not None else '—'}",
+        f"- **Findings:** {data['summary']['total_findings']}",
+        "",
+        "## Severity breakdown",
+        "",
+    ]
+    for sev, count in (data["summary"]["severity_breakdown"] or {}).items():
+        lines.append(f"- {sev}: {count}")
+    lines.extend(["", "## Findings", ""])
+    for f in data["findings"]:
+        lines.append(f"### [{(f.get('severity') or 'info').upper()}] {f.get('title')}")
+        if f.get("cvss_score") is not None:
+            lines.append(f"- CVSS: {f['cvss_score']}")
+        if f.get("cve_id"):
+            lines.append(f"- CVE: {f['cve_id']}")
+        if f.get("description"):
+            lines.append(f"\n{f['description']}\n")
+        if f.get("poc_curl"):
+            lines.append(f"```bash\n{f['poc_curl']}\n```")
+        if f.get("remediation"):
+            lines.append(f"**Remediation:** {f['remediation']}")
+        lines.append("")
+    return "\n".join(lines)
+
+
+def scan_to_pdf(db: Session, scan_id: str) -> bytes | None:
+    """Executive + technical PDF via reportlab."""
+    data = scan_to_json(db, scan_id)
+    if not data:
+        return None
+
+    try:
+        from reportlab.lib import colors
+        from reportlab.lib.enums import TA_LEFT
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+        from reportlab.lib.units import mm
+        from reportlab.platypus import (
+            Paragraph,
+            SimpleDocTemplate,
+            Spacer,
+            Table,
+            TableStyle,
+        )
+    except ImportError as exc:
+        raise RuntimeError(
+            "PDF export requires reportlab. Install with: pip install reportlab"
+        ) from exc
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buf,
+        pagesize=A4,
+        leftMargin=18 * mm,
+        rightMargin=18 * mm,
+        topMargin=16 * mm,
+        bottomMargin=16 * mm,
+        title=f"P4NT3XIA — {data.get('target') or scan_id}",
+    )
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        "TitleP4",
+        parent=styles["Title"],
+        fontSize=18,
+        textColor=colors.HexColor("#1e2a3a"),
+        spaceAfter=6,
+        alignment=TA_LEFT,
+    )
+    h2 = ParagraphStyle(
+        "H2P4",
+        parent=styles["Heading2"],
+        fontSize=13,
+        textColor=colors.HexColor("#0d7377"),
+        spaceBefore=12,
+        spaceAfter=6,
+    )
+    body = ParagraphStyle(
+        "BodyP4",
+        parent=styles["Normal"],
+        fontSize=9,
+        leading=12,
+        textColor=colors.HexColor("#1e2a3a"),
+    )
+    mono = ParagraphStyle(
+        "MonoP4",
+        parent=styles["Code"],
+        fontSize=7,
+        leading=9,
+        textColor=colors.HexColor("#0f1720"),
+        backColor=colors.HexColor("#f4f7fb"),
+    )
+
+    def esc(text: object) -> str:
+        return html.escape(str(text or "")).replace("\n", "<br/>")
+
+    story: list[Any] = []
+    story.append(Paragraph("P4NT3XIA Report", title_style))
+    story.append(
+        Paragraph(
+            f"<b>Target:</b> {esc(data.get('target'))} &nbsp;|&nbsp; "
+            f"<b>Mode:</b> {esc(data.get('mode'))} &nbsp;|&nbsp; "
+            f"<b>Status:</b> {esc(data.get('status'))}",
+            body,
+        )
+    )
+    story.append(
+        Paragraph(
+            f"Scan {esc(data.get('scan_id'))} · started {esc(data.get('started_at'))} · "
+            f"duration {esc(data.get('duration_seconds'))}s",
+            body,
+        )
+    )
+    story.append(Spacer(1, 8))
+
+    story.append(Paragraph("Executive summary", h2))
+    breakdown = data["summary"]["severity_breakdown"] or {}
+    sev_order = ["critical", "high", "medium", "low", "info"]
+    table_data = [["Severity", "Count"]]
+    for s in sev_order:
+        if breakdown.get(s):
+            table_data.append([s, str(breakdown[s])])
+    if len(table_data) == 1:
+        table_data.append(["—", "0"])
+    table_data.append(["Total", str(data["summary"]["total_findings"])])
+    tbl = Table(table_data, colWidths=[80 * mm, 40 * mm])
+    tbl.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1e2a3a")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, -1), 9),
+                ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#d0d8e0")),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f4f7fb")]),
+                ("LEFTPADDING", (0, 0), (-1, -1), 6),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                ("TOPPADDING", (0, 0), (-1, -1), 4),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ]
+        )
+    )
+    story.append(tbl)
+
+    story.append(Paragraph("Technical findings", h2))
+    if not data["findings"]:
+        story.append(Paragraph("No findings.", body))
+    for f in data["findings"]:
+        story.append(
+            Paragraph(
+                f"<b>[{esc((f.get('severity') or 'info').upper())}]</b> "
+                f"{esc(f.get('title'))} "
+                f"(CVSS {esc(f.get('cvss_score') if f.get('cvss_score') is not None else '—')})",
+                body,
+            )
+        )
+        if f.get("cve_id"):
+            story.append(Paragraph(f"CVE: {esc(f['cve_id'])}", body))
+        if f.get("description"):
+            story.append(Paragraph(esc(f["description"]), body))
+        if f.get("poc_curl"):
+            story.append(Paragraph(f"<font face='Courier'>{esc(f['poc_curl'])}</font>", mono))
+        if f.get("remediation"):
+            story.append(Paragraph(f"<b>Remediation:</b> {esc(f['remediation'])}", body))
+        story.append(Spacer(1, 6))
+
+    doc.build(story)
+    return buf.getvalue()
 
 
 def scan_to_html(db: Session, scan_id: str) -> str | None:

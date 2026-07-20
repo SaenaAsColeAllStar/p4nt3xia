@@ -275,9 +275,9 @@ Phase 3 — Minggu 5-6
     PDF report export
     Docker Compose production setup
 
-Phase 4 (Future)
+Phase 4 — done (see AGENTS.md / README)
 
-    Multi-user dengan role (personal use maybe skip)
+    Multi-user dengan role (optional JWT; personal use can leave AUTH_ENABLED=false)
     Frida integration untuk Android dynamic analysis
     API mode: accept curl-like request from terminal
     Template custom payload builder

@@ -35,11 +35,20 @@ class AttackModeOptions(BaseModel):
     sql_injection: bool = True
     xss: bool = True
     nuclei_exploit: bool = True
+    # Phase 3 vectors
+    brute_force: bool = False
+    ssrf: bool = False
+    jwt_attack: bool = False
+    command_injection: bool = False
+    lfi: bool = False
+    file_upload: bool = False
+    idor: bool = False
     threads: int = Field(default=3, ge=1, le=50)
     timeout: int = Field(default=60, ge=10, le=900)
     delay_ms: int = Field(default=0, ge=0, le=10_000)
     sqlmap_level: int = Field(default=2, ge=1, le=5)
     sqlmap_risk: int = Field(default=2, ge=1, le=3)
+    hydra_username: str = Field(default="admin", max_length=128)
     authorized: bool = Field(
         default=False,
         description="Must be true — explicit authorization confirmation",

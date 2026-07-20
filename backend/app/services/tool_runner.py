@@ -7,11 +7,27 @@ import logging
 import shutil
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Awaitable, Callable
 
 logger = logging.getLogger(__name__)
 
 ProgressCallback = Callable[[str], Awaitable[None] | None]
+
+# Tools that often exit non-zero when findings exist
+_NONZERO_OK = frozenset(
+    {
+        "nuclei",
+        "nuclei_exploit",
+        "ffuf",
+        "nmap",
+        "sqlmap",
+        "dalfox",
+        "hydra",
+        "ssrfmap",
+        "jwt_tool",
+    }
+)
 
 
 @dataclass
@@ -39,7 +55,10 @@ class ToolRunner:
         self.tool_name = tool_name or binary
 
     def is_available(self) -> bool:
-        return shutil.which(self.binary) is not None
+        if shutil.which(self.binary) is not None:
+            return True
+        path = Path(self.binary)
+        return path.is_file()
 
     async def run(
         self,
@@ -50,7 +69,12 @@ class ToolRunner:
         on_stdout_line: ProgressCallback | None = None,
     ) -> ToolRunResult:
         cmd = [self.binary, *args]
-        if not self.is_available():
+        # Python scripts with shebang may need python3 when not marked executable
+        if self.binary.endswith(".py") and Path(self.binary).is_file():
+            cmd = ["python3", self.binary, *args]
+        if not self.is_available() and not (
+            self.binary.endswith(".py") and Path(self.binary).is_file()
+        ):
             reason = f"Tool '{self.binary}' is not installed or not on PATH"
             logger.warning(reason)
             return ToolRunResult(
@@ -122,14 +146,7 @@ class ToolRunner:
         exit_code = proc.returncode if proc.returncode is not None else -1
         status = "completed" if exit_code == 0 else "failed"
         # Many scanners exit non-zero when findings exist; treat as completed if we got stdout
-        if exit_code != 0 and stdout_chunks and self.tool_name in (
-            "nuclei",
-            "nuclei_exploit",
-            "ffuf",
-            "nmap",
-            "sqlmap",
-            "dalfox",
-        ):
+        if exit_code != 0 and stdout_chunks and self.tool_name in _NONZERO_OK:
             status = "completed"
 
         return ToolRunResult(

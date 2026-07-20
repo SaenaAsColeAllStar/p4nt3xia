@@ -16,6 +16,7 @@ from app.models.target import Target
 from app.models.tool_result import ToolResult
 from app.schemas.scan import AttackScanRequest, DeepScanRequest
 from app.services import attack as attack_tools
+from app.services import custom_payloads
 from app.services import deep_scan as tools
 from app.services.target_utils import is_valid_target
 from app.services.tool_runner import ToolRunResult
@@ -42,11 +43,18 @@ DEEP_SCAN_PIPELINE = [
     ("katana", "crawl", tools.run_katana),
 ]
 
-# Phase 2 Attack Mode pipeline
+# Phase 2 + Phase 3 Attack Mode pipeline: (tool_name, options_key)
 ATTACK_PIPELINE = [
-    ("sqlmap", "sql_injection", "sqli"),
-    ("dalfox", "xss", "xss"),
-    ("nuclei_exploit", "nuclei_exploit", "exploit"),
+    ("sqlmap", "sql_injection"),
+    ("dalfox", "xss"),
+    ("nuclei_exploit", "nuclei_exploit"),
+    ("hydra", "brute_force"),
+    ("ssrfmap", "ssrf"),
+    ("jwt_tool", "jwt_attack"),
+    ("cmdi", "command_injection"),
+    ("lfi", "lfi"),
+    ("file_upload", "file_upload"),
+    ("idor", "idor"),
 ]
 
 
@@ -389,10 +397,11 @@ class ScannerService:
                 message=f"Launching Attack Mode on {target_value} (authorized)",
             )
 
+            phase2_defaults = {"sql_injection", "xss", "nuclei_exploit"}
             enabled: list[tuple[str, str]] = [
                 (name, key)
-                for name, key, _ in ATTACK_PIPELINE
-                if options.get(key, True)
+                for name, key in ATTACK_PIPELINE
+                if options.get(key, key in phase2_defaults)
             ]
             if not enabled:
                 scan.status = "failed"
@@ -412,6 +421,7 @@ class ScannerService:
             delay_ms = int(options.get("delay_ms", 0))
             level = int(options.get("sqlmap_level", 2))
             risk = int(options.get("sqlmap_risk", 2))
+            hydra_user = str(options.get("hydra_username") or "admin")
             step_count = len(enabled)
 
             runners = {
@@ -433,6 +443,47 @@ class ScannerService:
                     target_value,
                     timeout,
                     auth_header=auth_header,
+                ),
+                "hydra": lambda: attack_tools.run_hydra(
+                    target_value,
+                    timeout,
+                    auth_header=auth_header,
+                    delay_ms=delay_ms,
+                    username=hydra_user,
+                ),
+                "ssrfmap": lambda: attack_tools.run_ssrfmap(
+                    target_value,
+                    timeout,
+                    auth_header=auth_header,
+                ),
+                "jwt_tool": lambda: attack_tools.run_jwt_tool(
+                    target_value,
+                    timeout,
+                    auth_header=auth_header,
+                ),
+                "cmdi": lambda: custom_payloads.run_cmdi(
+                    target_value,
+                    timeout,
+                    auth_header=auth_header,
+                    delay_ms=delay_ms,
+                ),
+                "lfi": lambda: custom_payloads.run_lfi(
+                    target_value,
+                    timeout,
+                    auth_header=auth_header,
+                    delay_ms=delay_ms,
+                ),
+                "file_upload": lambda: custom_payloads.run_file_upload(
+                    target_value,
+                    timeout,
+                    auth_header=auth_header,
+                    delay_ms=delay_ms,
+                ),
+                "idor": lambda: custom_payloads.run_idor(
+                    target_value,
+                    timeout,
+                    auth_header=auth_header,
+                    delay_ms=delay_ms,
                 ),
             }
 
@@ -565,7 +616,19 @@ class ScannerService:
             return {"endpoint_count": len(p.get("endpoints") or [])}
         if result.tool_name == "whatweb":
             return {"tech_count": len(p.get("technologies") or [])}
-        if result.tool_name in ("nuclei", "nuclei_exploit", "sqlmap", "dalfox"):
+        if result.tool_name in (
+            "nuclei",
+            "nuclei_exploit",
+            "sqlmap",
+            "dalfox",
+            "hydra",
+            "ssrfmap",
+            "jwt_tool",
+            "lfi",
+            "cmdi",
+            "file_upload",
+            "idor",
+        ):
             return {"finding_count": len(p.get("findings") or [])}
         if result.tool_name == "katana":
             return {"url_count": len(p.get("urls") or [])}
@@ -578,6 +641,26 @@ class ScannerService:
         p = result.parsed_output or {}
 
         if result.status == "skipped":
+            # Prefer structured findings when the wrapper already explained the skip
+            pre = p.get("findings") or []
+            if pre:
+                for item in pre:
+                    sev = (item.get("severity") or "info").lower()
+                    if sev not in SEVERITY_CVSS:
+                        sev = "info"
+                    findings.append(
+                        Finding(
+                            scan_id=scan_id,
+                            title=item.get("title") or f"{result.tool_name} skipped",
+                            severity=sev,
+                            finding_type=item.get("finding_type") or "tool_status",
+                            description=item.get("description")
+                            or result.skip_reason
+                            or "Tool not available",
+                            raw_data={"tool": result.tool_name, "status": "skipped"},
+                        )
+                    )
+                return findings
             findings.append(
                 Finding(
                     scan_id=scan_id,

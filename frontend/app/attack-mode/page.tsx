@@ -1,13 +1,15 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState, Suspense } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import {
   api,
   AttackModeOptions,
   Finding,
   ProgressEvent,
   ScanWithDetails,
+  Target,
   WS_URL,
 } from "@/lib/api";
 import { FindingsTable } from "@/components/FindingsTable";
@@ -17,11 +19,19 @@ const DEFAULT_OPTIONS: AttackModeOptions = {
   sql_injection: true,
   xss: true,
   nuclei_exploit: true,
+  brute_force: false,
+  ssrf: false,
+  jwt_attack: false,
+  command_injection: false,
+  lfi: false,
+  file_upload: false,
+  idor: false,
   threads: 3,
   timeout: 60,
   delay_ms: 0,
   sqlmap_level: 2,
   sqlmap_risk: 2,
+  hydra_username: "admin",
   authorized: false,
 };
 
@@ -29,14 +39,23 @@ const VECTORS: { key: keyof AttackModeOptions; label: string }[] = [
   { key: "sql_injection", label: "SQL Injection (sqlmap)" },
   { key: "xss", label: "XSS (Dalfox)" },
   { key: "nuclei_exploit", label: "Nuclei Exploit Templates" },
+  { key: "brute_force", label: "Brute-force (hydra)" },
+  { key: "ssrf", label: "SSRF (SSRFmap)" },
+  { key: "jwt_attack", label: "JWT Attack (JWT_Tool)" },
+  { key: "command_injection", label: "Command Injection" },
+  { key: "lfi", label: "LFI / Path Traversal" },
+  { key: "file_upload", label: "File Upload Bypass" },
+  { key: "idor", label: "IDOR / BOLA" },
 ];
 
 type LogEntry = { id: string; message: string; tool?: string | null };
 
-export default function AttackModePage() {
+function AttackModePageInner() {
+  const searchParams = useSearchParams();
   const [target, setTarget] = useState("");
   const [authHeader, setAuthHeader] = useState("");
   const [options, setOptions] = useState<AttackModeOptions>(DEFAULT_OPTIONS);
+  const [library, setLibrary] = useState<Target[]>([]);
   const [scanId, setScanId] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
   const [status, setStatus] = useState("idle");
@@ -47,6 +66,12 @@ export default function AttackModePage() {
   const [submitting, setSubmitting] = useState(false);
   const logCounter = useRef(0);
   const wsRef = useRef<WebSocket | null>(null);
+
+  useEffect(() => {
+    const q = searchParams.get("target");
+    if (q) setTarget(q);
+    api.listTargets().then(setLibrary).catch(() => undefined);
+  }, [searchParams]);
 
   const pushLog = useCallback((message: string, tool?: string | null) => {
     logCounter.current += 1;
@@ -172,12 +197,12 @@ export default function AttackModePage() {
     <div className="mx-auto max-w-3xl space-y-8 animate-fadeUp">
       <header>
         <p className="font-mono text-[11px] uppercase tracking-[0.25em] text-warn-high">
-          Attack Mode · Phase 2
+          Attack Mode · Phase 3
         </p>
         <h1 className="mt-1 font-display text-4xl text-ink-900">Launch Attack</h1>
         <p className="mt-3 max-w-xl text-ink-600">
-          Aggressive exploitation vectors for systems you are explicitly
-          authorized to test. Findings include PoC curl commands and CVSS scores.
+          Aggressive exploitation for authorized targets — sqlmap, Dalfox, Nuclei,
+          hydra, SSRFmap, JWT_Tool, and custom LFI/CMDi/upload/IDOR probes.
         </p>
       </header>
 
@@ -187,8 +212,7 @@ export default function AttackModePage() {
         </p>
         <p className="mt-2 text-sm text-ink-700">
           Only attack targets you own or have written permission to assess.
-          sqlmap, Dalfox, and Nuclei exploit templates can disrupt services and
-          trigger security alerts.
+          Attack vectors can disrupt services and trigger security alerts.
         </p>
       </div>
 
@@ -206,9 +230,32 @@ export default function AttackModePage() {
           />
         </label>
 
+        {library.length > 0 && (
+          <label className="block space-y-2">
+            <span className="font-mono text-[10px] uppercase tracking-wider text-ink-600">
+              From target library
+            </span>
+            <select
+              className="w-full border border-ink-800/15 bg-fog-50 px-3 py-2 font-mono text-sm"
+              disabled={running}
+              defaultValue=""
+              onChange={(e) => {
+                if (e.target.value) setTarget(e.target.value);
+              }}
+            >
+              <option value="">Select saved target…</option>
+              {library.map((t) => (
+                <option key={t.id} value={t.value}>
+                  {t.value}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+
         <label className="block space-y-2">
           <span className="font-mono text-[10px] uppercase tracking-wider text-ink-600">
-            Auth header (optional)
+            Auth header (optional — required for JWT_Tool)
           </span>
           <input
             value={authHeader}
@@ -224,7 +271,7 @@ export default function AttackModePage() {
           <legend className="font-mono text-[10px] uppercase tracking-wider text-ink-600">
             Attack vectors
           </legend>
-          <div className="grid gap-2 sm:grid-cols-1">
+          <div className="grid gap-2 sm:grid-cols-2">
             {VECTORS.map((v) => (
               <label
                 key={v.key}
@@ -243,7 +290,7 @@ export default function AttackModePage() {
           </div>
         </fieldset>
 
-        <div className="grid gap-4 sm:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <label className="block space-y-1">
             <span className="font-mono text-[10px] uppercase tracking-wider text-ink-600">
               Delay (ms)
@@ -313,6 +360,20 @@ export default function AttackModePage() {
               />
             </div>
           </label>
+          <label className="block space-y-1">
+            <span className="font-mono text-[10px] uppercase tracking-wider text-ink-600">
+              Hydra username
+            </span>
+            <input
+              type="text"
+              value={options.hydra_username}
+              onChange={(e) =>
+                setOptions((o) => ({ ...o, hydra_username: e.target.value }))
+              }
+              disabled={running}
+              className="w-full border border-ink-800/15 bg-fog-50 px-3 py-2 font-mono text-sm"
+            />
+          </label>
         </div>
 
         <label className="flex items-start gap-3 border border-warn-high/30 bg-warn-high/5 px-3 py-3">
@@ -377,5 +438,17 @@ export default function AttackModePage() {
         <FindingsTable findings={findings} scanId={scanId || undefined} />
       </section>
     </div>
+  );
+}
+
+export default function AttackModePage() {
+  return (
+    <Suspense
+      fallback={
+        <p className="font-mono text-sm text-ink-600">Loading Attack Mode…</p>
+      }
+    >
+      <AttackModePageInner />
+    </Suspense>
   );
 }

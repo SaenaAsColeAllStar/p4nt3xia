@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session, joinedload
 
 from app.database import get_db
+from app.deps import RequireViewer
 from app.models.finding import Finding
 from app.models.scan import Scan
 from app.models.target import Target
@@ -15,7 +16,10 @@ router = APIRouter(tags=["dashboard"])
 
 
 @router.get("/dashboard", response_model=DashboardStats)
-def get_dashboard(db: Session = Depends(get_db)) -> DashboardStats:
+def get_dashboard(
+    _user: RequireViewer,
+    db: Session = Depends(get_db),
+) -> DashboardStats:
     total_scans = db.query(Scan).count()
     active_targets = db.query(Target).count()
     running_scans = db.query(Scan).filter(Scan.status == "running").count()

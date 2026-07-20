@@ -12,3 +12,4 @@ alwaysApply: false
 - Finding PoC: copy-to-clipboard for `poc_curl` / request / response; link to `/history/[scanId]/findings/[findingId]` for detail.
 - Keep the existing visual language (display + mono fonts, signal accent, fog backgrounds). Avoid dark-mode purple AI defaults.
 - Report downloads: open/fetch `/api/scans/{id}/report?format=json|html` via the API URL.
+- Phase 4 pages: `/login`, `/api-mode`, `/templates`, `/frida`. Attach Bearer token via `getToken()` in `lib/api.ts` when auth is enabled.

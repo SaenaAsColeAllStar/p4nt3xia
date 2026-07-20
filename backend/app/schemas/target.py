@@ -17,6 +17,18 @@ class TargetCreate(BaseModel):
         return v.strip()
 
 
+class TargetUpdate(BaseModel):
+    value: str | None = Field(default=None, min_length=1, max_length=512)
+    type: str | None = Field(default=None, pattern="^(web|api|android_backend)$")
+    tags: list[str] | None = None
+    notes: str | None = None
+
+    @field_validator("value")
+    @classmethod
+    def normalize_value(cls, v: str | None) -> str | None:
+        return v.strip() if v else v
+
+
 class TargetOut(BaseModel):
     id: str
     value: str

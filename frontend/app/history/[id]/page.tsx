@@ -69,9 +69,23 @@ export default function ScanDetailPage() {
             href={reportUrl(id, "html")}
             target="_blank"
             rel="noopener noreferrer"
+            className="border border-ink-800/20 px-4 py-2 font-mono text-[10px] uppercase tracking-wider text-ink-700 transition hover:border-signal hover:text-signal"
+          >
+            HTML Report
+          </a>
+          <a
+            href={reportUrl(id, "markdown")}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="border border-ink-800/20 px-4 py-2 font-mono text-[10px] uppercase tracking-wider text-ink-700 transition hover:border-signal hover:text-signal"
+          >
+            Markdown
+          </a>
+          <a
+            href={reportUrl(id, "pdf")}
             className="bg-ink-900 px-4 py-2 font-mono text-[10px] uppercase tracking-wider text-fog-50 transition hover:bg-signal"
           >
-            Generate HTML Report
+            Download PDF
           </a>
         </div>
       </div>
